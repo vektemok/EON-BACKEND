@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"main/internal/station"
+
 	// "main/internal/auth"
 	"os"
 
@@ -11,6 +13,9 @@ import (
 )
 
 func main() {
+
+	stationService := &station.StationServiceImpl{}
+
 	urlExample := "postgres://postgres:1234@localhost:4321/postgres"
 
 	conn, err := pgx.Connect(context.Background(), urlExample)
@@ -31,7 +36,18 @@ func main() {
 	}
 	fmt.Println("PostgreSQL version:", dbVersion)
 
-	// app.Get("/auth:name?", auth.SignInByPhoneNumber)
+
+
+	app.Get("/stations", func(c *fiber.Ctx) error {
+		stations, err := stationService.GetAllStations()
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Failed to retrieve stations",
+			})
+		}
+
+		return c.JSON(stations)
+	})
 
 	app.Listen(":3000")
 
