@@ -1,54 +1,124 @@
 package main
 
 import (
-	"context"
-	"fmt"
+	"main/internal/config"
+	"main/internal/lib/logger"
+	"main/internal/storage/postgres"
+	"strconv"
+
+	// "main/internal/storage/sql/gen"
+	db "main/internal/storage/sql/gen"
+	// "strconv"
+	"time"
+
 	"main/internal/station"
 
-	// "main/internal/auth"
-	"os"
-
 	"github.com/gofiber/fiber/v2"
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type StationDTO struct {
+	StationID   string    `json:"station_id"`
+	Latitude    float64   `json:"latitude"`
+	Longitude   float64   `json:"longitude"`
+	Address     string    `json:"address"`
+	StationType string    `json:"station_type"`
+	StationName string    `json:"station_name"`
+	AvailableAt time.Time `json:"available_at"`
+	PowerKw     float64   `json:"power_kw"`
+
+	Price         float64  `json:"price"`
+	PriceUnit     string   `json:"price_unit"`
+	PriceCurrency string   `json:"price_currency"`
+	Connectors    []string `json:"connectors"`
+}
 
 func main() {
 
-	stationService := &station.StationServiceImpl{}
+	cfg := config.LoadConfig()
 
-	urlExample := "postgres://postgres:1234@localhost:4321/postgres"
+	log := logger.SetupLogger(cfg.Env)
 
-	conn, err := pgx.Connect(context.Background(), urlExample)
+	dbPool := postgres.ConnectDB(cfg, log)
 
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Unable to connect to database: %v\n", err)
-		os.Exit(1)
-	}
+	queries := db.New(dbPool)
 
-	defer conn.Close(context.Background())
+	stationService := station.NewStationService(queries)
+
 	app := fiber.New()
 
-	var dbVersion string
-	err = conn.QueryRow(context.Background(), "SELECT version()").Scan(&dbVersion)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to execute query: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Println("PostgreSQL version:", dbVersion)
+	app.Get("/nearest", func(c *fiber.Ctx) error {
+		lat, err1 := strconv.ParseFloat(c.Query("lat"), 64)
+		lon, err2 := strconv.ParseFloat(c.Query("lon"), 64)
+		limit, err3 := strconv.Atoi(c.Query("limit", "3"))
 
+		if err1 != nil || err2 != nil || err3 != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "invalid query parameters",
+			})
+		}
 
-
-	app.Get("/stations", func(c *fiber.Ctx) error {
-		stations, err := stationService.GetAllStations()
+		stationsWithDistance, err := stationService.FindNearestStations(lat, lon, limit)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{
-				"error": "Failed to retrieve stations",
+				"error": err.Error(),
+			})
+		}
+
+		return c.JSON(stationsWithDistance)
+
+	})
+	app.Get("/stations", func(c *fiber.Ctx) error {
+		stations, err := stationService.GetAllStations()
+		log.Sugar().Errorf("Failed to get stations: %v", err)
+
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": err,
 			})
 		}
 
 		return c.JSON(stations)
 	})
 
-	app.Listen(":3000")
+	app.Post("/stations", func(c *fiber.Ctx) error {
+		var dto StationDTO
 
+		if err := c.BodyParser(&dto); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Invalid request body",
+			})
+		}
+
+		station := db.Station{
+			StationID:     dto.StationID,
+			Latitude:      dto.Latitude,
+			Longitude:     dto.Longitude,
+			Address:       pgtype.Text{String: dto.Address, Valid: true},
+			StationName:   pgtype.Text{String: dto.StationName, Valid: true},
+			StationType:   pgtype.Text{String: dto.StationType, Valid: true},
+			AvailableAt:   pgtype.Timestamp{Time: dto.AvailableAt, Valid: true},
+			Connectors:    dto.Connectors,
+			PowerKw:       dto.PowerKw,
+			Price:         dto.Price,
+			PriceUnit:     dto.PriceUnit,
+			PriceCurrency: dto.PriceCurrency,
+		}
+
+		createdStation, err := stationService.CreateStation(station)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+
+		return c.Status(fiber.StatusCreated).JSON(createdStation)
+	})
+
+	err := app.Listen(cfg.Address)
+	if err != nil {
+		log.Sugar().Fatalf("Failed to start server: %v", err)
+	}
+
+	dbPool.Close()
 }

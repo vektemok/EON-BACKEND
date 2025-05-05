@@ -1,0 +1,14 @@
+# .air.toml
+root = "."
+  
+[build]
+  cmd = "go build -o tmp/main ./cmd/api-server"
+  bin = "tmp/main"
+  include_dir = ["cmd", "internal"]  # Убедись, что эти директории содержат Go файлы
+  exclude_dir = ["tmp"]
+  full_build = true
+  run = true
+
+[log]
+  time = true
+  level = "debug"
