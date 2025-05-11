@@ -10,5 +10,7 @@ CREATE TABLE stations (
     power_kw        DOUBLE PRECISION NOT NULL,
     price           DOUBLE PRECISION NOT NULL,
     price_unit      TEXT NOT NULL,
-    price_currency  TEXT NOT NULL
+    price_currency  TEXT NOT NULL,
+    moderation_status TEXT NOT NULL
+
 );

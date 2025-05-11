@@ -9,16 +9,18 @@ import (
 )
 
 type Station struct {
-	StationID     string
-	Latitude      float64
-	Longitude     float64
-	Address       pgtype.Text
-	StationName   pgtype.Text
-	StationType   pgtype.Text
-	AvailableAt   pgtype.Timestamp
-	Connectors    []string
-	PowerKw       float64
-	Price         float64
-	PriceUnit     string
-	PriceCurrency string
+	StationID        string
+	Latitude         float64
+	Longitude        float64
+	Address          pgtype.Text
+	StationName      pgtype.Text
+	StationType      pgtype.Text
+	AvailableAt      pgtype.Timestamp
+	Connectors       []string
+	PowerKw          float64
+	Price            float64
+	PriceUnit        string
+	PriceCurrency    string
+	ModerationStatus string
 }
+

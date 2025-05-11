@@ -15,28 +15,29 @@ const createStation = `-- name: CreateStation :one
 INSERT INTO stations (
     station_id, latitude, longitude, address, station_name,
     station_type, available_at, connectors, power_kw,
-    price, price_unit, price_currency
+    price, price_unit, price_currency, moderation_status
 ) VALUES (
     $1, $2, $3, $4, $5,
     $6, $7, $8, $9,
-    $10, $11, $12
+    $10, $11, $12, $13
 )
-RETURNING station_id, latitude, longitude, address, station_name, station_type, available_at, connectors, power_kw, price, price_unit, price_currency
+RETURNING station_id, latitude, longitude, address, station_name, station_type, available_at, connectors, power_kw, price, price_unit, price_currency, moderation_status
 `
 
 type CreateStationParams struct {
-	StationID     string
-	Latitude      float64
-	Longitude     float64
-	Address       pgtype.Text
-	StationName   pgtype.Text
-	StationType   pgtype.Text
-	AvailableAt   pgtype.Timestamp
-	Connectors    []string
-	PowerKw       float64
-	Price         float64
-	PriceUnit     string
-	PriceCurrency string
+	StationID        string
+	Latitude         float64
+	Longitude        float64
+	Address          pgtype.Text
+	StationName      pgtype.Text
+	StationType      pgtype.Text
+	AvailableAt      pgtype.Timestamp
+	Connectors       []string
+	PowerKw          float64
+	Price            float64
+	PriceUnit        string
+	PriceCurrency    string
+	ModerationStatus string
 }
 
 func (q *Queries) CreateStation(ctx context.Context, arg CreateStationParams) (Station, error) {
@@ -53,6 +54,7 @@ func (q *Queries) CreateStation(ctx context.Context, arg CreateStationParams) (S
 		arg.Price,
 		arg.PriceUnit,
 		arg.PriceCurrency,
+		arg.ModerationStatus,
 	)
 	var i Station
 	err := row.Scan(
@@ -68,6 +70,7 @@ func (q *Queries) CreateStation(ctx context.Context, arg CreateStationParams) (S
 		&i.Price,
 		&i.PriceUnit,
 		&i.PriceCurrency,
+		&i.ModerationStatus,
 	)
 	return i, err
 }
@@ -83,7 +86,7 @@ func (q *Queries) DeleteStation(ctx context.Context, stationID string) error {
 }
 
 const getStation = `-- name: GetStation :one
-SELECT station_id, latitude, longitude, address, station_name, station_type, available_at, connectors, power_kw, price, price_unit, price_currency FROM stations
+SELECT station_id, latitude, longitude, address, station_name, station_type, available_at, connectors, power_kw, price, price_unit, price_currency, moderation_status FROM stations
 WHERE station_id = $1
 `
 
@@ -103,12 +106,52 @@ func (q *Queries) GetStation(ctx context.Context, stationID string) (Station, er
 		&i.Price,
 		&i.PriceUnit,
 		&i.PriceCurrency,
+		&i.ModerationStatus,
 	)
 	return i, err
 }
 
+const getStationsByModerationStatus = `-- name: GetStationsByModerationStatus :many
+SELECT station_id, latitude, longitude, address, station_name, station_type, available_at, connectors, power_kw, price, price_unit, price_currency, moderation_status FROM stations
+WHERE moderation_status = $1
+`
+
+func (q *Queries) GetStationsByModerationStatus(ctx context.Context, moderationStatus string) ([]Station, error) {
+	rows, err := q.db.Query(ctx, getStationsByModerationStatus, moderationStatus)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Station
+	for rows.Next() {
+		var i Station
+		if err := rows.Scan(
+			&i.StationID,
+			&i.Latitude,
+			&i.Longitude,
+			&i.Address,
+			&i.StationName,
+			&i.StationType,
+			&i.AvailableAt,
+			&i.Connectors,
+			&i.PowerKw,
+			&i.Price,
+			&i.PriceUnit,
+			&i.PriceCurrency,
+			&i.ModerationStatus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStations = `-- name: ListStations :many
-SELECT station_id, latitude, longitude, address, station_name, station_type, available_at, connectors, power_kw, price, price_unit, price_currency FROM stations
+SELECT station_id, latitude, longitude, address, station_name, station_type, available_at, connectors, power_kw, price, price_unit, price_currency, moderation_status FROM stations
 ORDER BY station_name
 `
 
@@ -134,6 +177,7 @@ func (q *Queries) ListStations(ctx context.Context) ([]Station, error) {
 			&i.Price,
 			&i.PriceUnit,
 			&i.PriceCurrency,
+			&i.ModerationStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -160,7 +204,7 @@ SET
     price_unit = $11,
     price_currency = $12
 WHERE station_id = $1
-RETURNING station_id, latitude, longitude, address, station_name, station_type, available_at, connectors, power_kw, price, price_unit, price_currency
+RETURNING station_id, latitude, longitude, address, station_name, station_type, available_at, connectors, power_kw, price, price_unit, price_currency, moderation_status
 `
 
 type UpdateStationParams struct {
@@ -207,6 +251,7 @@ func (q *Queries) UpdateStation(ctx context.Context, arg UpdateStationParams) (S
 		&i.Price,
 		&i.PriceUnit,
 		&i.PriceCurrency,
+		&i.ModerationStatus,
 	)
 	return i, err
 }

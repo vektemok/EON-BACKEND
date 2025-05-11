@@ -2,11 +2,11 @@
 INSERT INTO stations (
     station_id, latitude, longitude, address, station_name,
     station_type, available_at, connectors, power_kw,
-    price, price_unit, price_currency
+    price, price_unit, price_currency, moderation_status
 ) VALUES (
     $1, $2, $3, $4, $5,
     $6, $7, $8, $9,
-    $10, $11, $12
+    $10, $11, $12, $13
 )
 RETURNING *;
 
@@ -38,3 +38,7 @@ RETURNING *;
 -- name: DeleteStation :exec
 DELETE FROM stations
 WHERE station_id = $1;
+
+-- name: GetStationsByModerationStatus :many
+SELECT * FROM stations
+WHERE moderation_status = $1;

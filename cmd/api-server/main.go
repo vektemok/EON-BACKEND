@@ -1,37 +1,26 @@
 package main
 
 import (
+	// "fmt"
+	// "encoding/json"
+	// "fmt"
 	"main/internal/config"
+	"main/internal/domain/model"
+	"main/internal/service/impl"
+
+	// "main/internal/lib/api/response"
+	l "log"
+	"main/internal/lib/api/response"
 	"main/internal/lib/logger"
 	"main/internal/storage/postgres"
 	"strconv"
 
-	// "main/internal/storage/sql/gen"
 	db "main/internal/storage/sql/gen"
-	// "strconv"
-	"time"
 
-	"main/internal/station"
-
+	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 )
-
-type StationDTO struct {
-	StationID   string    `json:"station_id"`
-	Latitude    float64   `json:"latitude"`
-	Longitude   float64   `json:"longitude"`
-	Address     string    `json:"address"`
-	StationType string    `json:"station_type"`
-	StationName string    `json:"station_name"`
-	AvailableAt time.Time `json:"available_at"`
-	PowerKw     float64   `json:"power_kw"`
-
-	Price         float64  `json:"price"`
-	PriceUnit     string   `json:"price_unit"`
-	PriceCurrency string   `json:"price_currency"`
-	Connectors    []string `json:"connectors"`
-}
 
 func main() {
 
@@ -43,9 +32,19 @@ func main() {
 
 	queries := db.New(dbPool)
 
-	stationService := station.NewStationService(queries)
-
 	app := fiber.New()
+
+	app.Use(cors.New())
+
+	stationService := service.NewStationService(queries)
+
+	app.Use("/ws", func(c *fiber.Ctx) error {
+		if websocket.IsWebSocketUpgrade(c) {
+			c.Locals("allowed", true)
+			return c.Next()
+		}
+		return fiber.ErrUpgradeRequired
+	})
 
 	app.Get("/nearest", func(c *fiber.Ctx) error {
 		lat, err1 := strconv.ParseFloat(c.Query("lat"), 64)
@@ -82,27 +81,12 @@ func main() {
 	})
 
 	app.Post("/stations", func(c *fiber.Ctx) error {
-		var dto StationDTO
+		var station model.Station
 
-		if err := c.BodyParser(&dto); err != nil {
+		if err := c.BodyParser(&station); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"error": "Invalid request body",
 			})
-		}
-
-		station := db.Station{
-			StationID:     dto.StationID,
-			Latitude:      dto.Latitude,
-			Longitude:     dto.Longitude,
-			Address:       pgtype.Text{String: dto.Address, Valid: true},
-			StationName:   pgtype.Text{String: dto.StationName, Valid: true},
-			StationType:   pgtype.Text{String: dto.StationType, Valid: true},
-			AvailableAt:   pgtype.Timestamp{Time: dto.AvailableAt, Valid: true},
-			Connectors:    dto.Connectors,
-			PowerKw:       dto.PowerKw,
-			Price:         dto.Price,
-			PriceUnit:     dto.PriceUnit,
-			PriceCurrency: dto.PriceCurrency,
 		}
 
 		createdStation, err := stationService.CreateStation(station)
@@ -115,10 +99,42 @@ func main() {
 		return c.Status(fiber.StatusCreated).JSON(createdStation)
 	})
 
-	err := app.Listen(cfg.Address)
-	if err != nil {
-		log.Sugar().Fatalf("Failed to start server: %v", err)
-	}
+	app.Put("/stations/:station_id", func(c *fiber.Ctx) error {
+
+		stationID := c.Params("station_id")
+
+		if stationID == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(response.Error("station_id is required"))
+		}
+
+		var station model.Station
+
+		err := stationService.UpdateStation(stationID, station)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(response.Error(err.Error()))
+		}
+
+		return c.Status(fiber.StatusOK).JSON(response.OK())
+
+	})
+
+	app.Get("/stations/:station_id", func(c *fiber.Ctx) error {
+		stationID := c.Params("station_id")
+
+		if stationID == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(response.Error("station_id is required"))
+		}
+
+		stations, err := stationService.GetStationsByModerationStatus(stationID)
+
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(response.Error("error fetch data"))
+		}
+
+		return c.Status(fiber.StatusOK).JSON(stations)
+	})
+
+	l.Fatal(app.Listen(cfg.Address))
 
 	dbPool.Close()
 }

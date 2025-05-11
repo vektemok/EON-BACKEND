@@ -1,0 +1,40 @@
+app.Get("/ws/stations/:moderation_status", websocket.New(func(c *websocket.Conn) {
+		defer c.Close()
+
+		moderationStatus := c.Params("moderation_status")
+		if moderationStatus == "" {
+			errMsg := "moderation_status is required"
+			c.WriteMessage(websocket.TextMessage, []byte(errMsg))
+			return
+		}
+
+		if !station.ValidModerationStatuses[moderationStatus] {
+			validStatuses := make([]string, 0, len(station.ValidModerationStatuses))
+			for s := range station.ValidModerationStatuses {
+				validStatuses = append(validStatuses, s)
+			}
+
+			errMsg := fmt.Sprintf(
+				"invalid moderation_status value: '%s'. Allowed values are: %v",
+				moderationStatus, validStatuses,
+			)
+
+			c.WriteMessage(websocket.TextMessage, []byte(response.Error(errMsg).Error))
+		}
+
+		stations, err := stationService.GetStationsByModerationStatus(moderationStatus)
+		if err != nil {
+
+			c.WriteMessage(websocket.TextMessage, []byte(response.Error("failed to load station").Error))
+			return
+		}
+
+		data, err := json.Marshal(stations)
+		if err != nil {
+
+			c.WriteMessage(websocket.TextMessage, []byte("Internal error"))
+			return
+		}
+
+		c.WriteMessage(websocket.TextMessage, data)
+	}))
